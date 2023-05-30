@@ -1,0 +1,103 @@
+####################################################################################################
+**** For paired-end only reads (no chunking) ****
+### 1- on Narval run the following commands:
+export MUGQIC_INSTALL_HOME=/cvmfs/soft.mugqic/CentOS6
+module use $MUGQIC_INSTALL_HOME/modulefiles
+module load mugqic/python/3.9.1
+module load mugqic/genpipes/4.3.0
+export JOB_MAIL=sana.naderi@mail.mcgill.ca
+export RAP_ID=ctb-shapiro
+
+
+## 2- run the following command on the login node:
+
+covseq.py -c $MUGQIC_PIPELINES_HOME/pipelines/covseq/covseq.base.ini \
+$MUGQIC_PIPELINES_HOME/pipelines/common_ini/narval.ini \
+$MUGQIC_INSTALL_HOME/genomes/species/Coronavirinae.SARS-CoV-2/Coronavirinae.SARS-CoV-2.ini \
+-j slurm \
+-r human_readset.txt \
+-o /home/sanna/projects/ctb-shapiro/sanna/sanna/aim3/005-human_subsample/2-genpipes \
+-g human_genpipes.sh
+
+
+## 3-run the resulting sbatch script using sbatch:
+sbatch all_species_genpipes.sh
+
+####################################################################################################
+###### how to chunk jobs for submission on Narval
+#!/bin/bash
+# ---------------------------------------------------------------------
+# SLURM script for a job submission on a Compute Canada cluster.
+# ---------------------------------------------------------------------
+#SBATCH --account=ctb-shapiro
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=1G
+#SBATCH --time=2-00:00:00  # e.g. 1-00:00:00 for a day
+#SBATCH --ntasks=1
+#SBATCH --output=submit.log
+
+
+export MUGQIC_INSTALL_HOME=/cvmfs/soft.mugqic/CentOS6
+module use $MUGQIC_INSTALL_HOME/modulefiles
+module load mugqic/python/3.9.1
+module load mugqic/genpipes/4.3.0
+export JOB_MAIL=sana.naderi@mail.mcgill.ca
+export RAP_ID=ctb-shapiro
+
+covseq.py -c $MUGQIC_PIPELINES_HOME/pipelines/covseq/covseq.base.ini \
+$MUGQIC_PIPELINES_HOME/pipelines/common_ini/narval.ini \
+$MUGQIC_INSTALL_HOME/genomes/species/Coronavirinae.SARS-CoV-2/Coronavirinae.SARS-CoV-2.ini \
+-j slurm \
+-r pairedEnd_readset.tsv \
+-g out.sh
+
+$MUGQIC_PIPELINES_HOME/utils/chunk_genpipes.sh -n 20 out.sh chunks
+
+$MUGQIC_PIPELINES_HOME/utils/submit_genpipes chunks
+
+
+
+####################################################################################################
+### How to run jobs for single end reads:
+# Single-end reads need to be run separately from paired-end reads
+
+
+## 1. create a text file called custom.ini with the following content:
+[sambamba_filtering]
+sambamba_filtering_other_options = -f bam -F "not unmapped and not secondary_alignment and not supplementary and mapping_quality > 0"
+
+## 2. run the following (use genpipes locally cloned on Narval, instructions for this follow)
+export MUGQIC_INSTALL_HOME=/cvmfs/soft.mugqic/CentOS6
+module use $MUGQIC_INSTALL_HOME/modulefiles
+export JOB_MAIL=sana.naderi@mail.mcgill.ca
+export RAP_ID=ctb-shapiro
+export MUGQIC_PIPELINES_HOME=$HOME/apps/genpipes
+$MUGQIC_PIPELINES_HOME/pipelines/covseq/covseq.py -r r.tsv -c $MUGQIC_PIPELINES_HOME/pipelines/covseq/covseq.base.ini $MUGQIC_PIPELINES_HOME/pipelines/common_ini/narval.ini custom.ini -g out.sh
+
+## 3. run as before w or without chunking
+
+
+####################################################################################################
+### How to clone the version of genpipes that works with single-end reads:
+You have to:
+## 1. Add the following to your ~/.bash_profile (assuming you already added what I sent previously):
+export MUGQIC_PIPELINES_HOME=$HOME/apps/genpipes
+## 2. Setup GenPipes:
+mkdir -p ~/apps
+cd ~/apps
+git clone https://bitbucket.org/mugqic/genpipes.git
+cd genpipes
+git checkout HotFix_dev
+## This will allow you to use a special branch of GenPipes. And you can run basic git commands to keep it up to date like git pull.
+
+## 3. Run GenPipes as you are used to do but add the path of the one cloned instead of using the one loaded with module load:
+$MUGQIC_PIPELINES_HOME/pipelines/covseq/covseq.py -r readset -c $MUGQIC_PIPELINES_HOME/pipelines/covseq/covseq.base.ini $MUGQIC_PIPELINES_HOME/pipelines/common_ini/narval.ini ...
+
+
+
+
+
+
+
+

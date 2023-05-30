@@ -1,0 +1,11 @@
+SELECT *
+FROM nih-sra-datastore.sra.metadata
+WHERE assay_type = 'AMPLICON'
+  AND librarylayout = 'PAIRED'
+  AND geo_loc_name_country_calc = 'USA'
+  AND 'USA: Colorado' IN UNNEST(geo_loc_name_sam)
+  AND consent = 'public'
+  AND collection_date_sam BETWEEN '2020-05-01' AND '2020-06-01'
+  AND organism = 'Severe acute respiratory syndrome coronavirus 2'
+  AND ('host_sam', 'Homo sapiens') IN UNNEST(attributes)
+LIMIT 11

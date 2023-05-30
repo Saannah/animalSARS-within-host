@@ -1,0 +1,15 @@
+#### script to extract useful info from the vcf files to later process it in R
+
+module load StdEnv/2020  gcc/9.3.0
+module load bcftools/1.13
+
+for i in *vcf
+do
+	bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO\n' ${i} > ${i}_table.tsv
+done 
+
+### the rscript from file number 005
+for i in *table.tsv
+do
+	Rscript parse.R ${i}
+done
