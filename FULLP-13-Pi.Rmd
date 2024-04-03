@@ -1,0 +1,351 @@
+---
+title: "Pi calculations and comparison"
+output: html_document
+date: "2024-02-23"
+---
+
+The Tonkin-hill paper calculates pi with this formuka: $$\pi = 2\sum_{i}^{}{p_i(1-p_i)}$$
+The original definition of pi in the [Nielsen paper](https://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-14-289) (who also cites Tajima) is this: $$\hat{\theta}_\pi = \binom{n}{2}^{-1} \sum_{i=1}^{n-1}i(n-i)\eta_i $$
+
+
+For very large n's, the two formula's converge (the limit of Tajima's formula if n goes to infinity is equivalent to the Tonkin formula, I still have to prove this analytically because the sum ranges are different but I think it's right.)
+
+The formula from Tajima has $n$ (population) in it, but the Tonkin formula takes the frequency of the alternate allele at every site (so no $n$). The deviation from the true $\pi$ value is because the true population size ($n$) is unknown in a within-host sample. This does not matter if $n$ is very large, as the variation is very small for large population sizes, where the true Pi formula from Tajima converges to the Tonkin formula. Here, for an example VCF file (I generated random SNP frequencies) I calculate pi using Tajima's formula for different $n$ values and compare it with Tonkin's formula. 
+
+```{r, convergence of the two formulas,echo=FALSE, warning=FALSE, message=FALSE}
+
+rm(list = ls())
+library(ggplot2)
+vcf = data.frame(ALT_DP = c(3,5,7,3,2,3,1,3,4,5),
+                 TOTAL_DP = c(8,12,8,8,4,8,4,8,8,8))
+vcf$FREQ = vcf$ALT_DP/vcf$TOTAL_DP
+
+all = vector()
+
+for(sc in 1:500){
+  
+  ### reconstruct the SFS from the vcf file
+  scale_depth = function(i, vcf, scaling_factor){
+    row = rep(0, scaling_factor)
+    alt_scaled = ceiling(scaling_factor * vcf$ALT_DP[i]/vcf$TOTAL_DP[i])
+    row[1: alt_scaled] = 1
+    return(row)
+  }
+  
+  create_alleles_matrix = function(vcf, sc){
+    return(t(do.call(rbind, lapply(1:nrow(vcf), scale_depth, vcf = vcf, scaling_factor = sc)
+    )))
+  }
+  
+  
+  #create choose2 vector
+  inner_loop = function(j){
+    return((1:(j-1)))
+  }
+  dummy_index = function(l){
+    return(rep(l, (l-1)))
+  }
+  create_choose2_indices = function(i){
+    rows = unlist(lapply(2:i, inner_loop))
+    cols = unlist(lapply(2:i, dummy_index))
+    return(rbind(rows,
+                 cols))
+  }
+  
+  count_diff = function(i, j, alleles_matrix){
+    return(length(which(alleles_matrix[i,] != alleles_matrix[j, ])))
+  }
+  
+  mean_over_all_pairdiff = function(vcf){
+    alleles_matrix = create_alleles_matrix(vcf)
+    choose_2_indices = create_choose2_indices(nrow(alleles_matrix))
+    all_pairs_diff = mapply(count_diff, choose_2_indices[1, ], choose_2_indices[2, ],
+                            MoreArgs = list(alleles_matrix = alleles_matrix))
+    return(mean(all_pairs_diff))
+  }
+  
+  return_count = function(i, alt_count){
+    return(length(which(alt_count == i)))
+  }
+  
+  create_sfs_from_alleles_matrix = function(alleles_matrix){
+    alt_count = colSums(alleles_matrix)
+    pop_size = nrow(alleles_matrix)
+    sfs_1_nMinus1 = unlist(lapply(1:(pop_size - 1), return_count, alt_count))
+    sfs_0_n = c(0, sfs_1_nMinus1, 0)
+    return(list(sfs_1_nMinus1 = sfs_1_nMinus1, sfs_0_n = sfs_0_n))
+  }
+  
+  
+  pi_from_sfs = function(vcf, sc){
+    alleles_matrix = create_alleles_matrix(vcf, sc)
+    sfs_obj = create_sfs_from_alleles_matrix(alleles_matrix)
+    sfs = sfs_obj$sfs_1_nMinus1
+    pop_size = length(sfs) + 1
+    n_vec = rep(pop_size, (pop_size - 1))
+    i_vec = 1:(pop_size - 1)
+    return(sum(i_vec * (n_vec - i_vec) * sfs)/(pop_size * (pop_size - 1) * 0.5))
+  }
+  
+  pi = pi_from_sfs(vcf, sc)
+  all = c(all, pi)
+  
+}
+
+
+pi_tonkin = 2 * sum(vcf$FREQ*(1 - vcf$FREQ))
+
+df = data.frame(population = c(1:sc, 1:sc),
+                Pi = c(all, rep(pi_tonkin, sc)),
+                method = c(rep("Tajima", sc), rep("Tonkin", sc)))
+ggplot(aes(x=population, y = Pi), data = df)+ geom_line(aes(color = method)) +
+  #geom_hline(yintercept = pi_tonkin, color = "darkred")+
+  xlab("Assumed population size")+
+  ylab("Pi") +
+  theme_bw()
+```
+
+For smaller $n$'s there is a lot of variation but eventually it converges to the Tonkin value.
+
+
+I calculated pi on the animal data using the two formulas and compare:
+
+```{r, load data and prepare,echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+rm(list = ls())
+#setwd("/Users/sana/Documents/AIM3/021-full_pipeline/00-ALL_FILES")
+dir = "/Users/sana/Documents/AIM3/021-full_pipeline/00-ALL_FILES"
+library(stringr)
+
+minimum_depth = 50
+fixation_freq = 0.05
+min_alt_dp = 50
+
+## load vcf file names
+vcfnames = read.delim(paste0(dir, "/filenames"), header = FALSE)
+vcfnames = vcfnames[, 1]
+
+#create vectors for coveage and freyja file names
+samplenames = vector()
+coveragenames = vector()
+freyjanames = vector()
+for(i in 1:length(vcfnames)){
+  name = str_split(vcfnames[i], "\\.")
+  samplenames = c(samplenames, unlist(name)[1])
+  coveragenames = c(coveragenames, 
+                    paste0(unlist(name)[1], ".sorted.filtered.primerTrim.bam.bed.coverage"))
+  freyjanames = c(freyjanames, 
+                  paste0(unlist(name)[1], ".sorted.filtered.primerTrim.bam_VOC.tsv"))
+}
+
+## function that filters the VCF file based on the thresholds
+is_acceptable_snp = function(r, VCF, minimum_depth, fixation_freq, min_alt_dp){
+  row = VCF[r, ]
+  flag = 0
+  #excludes indels from the file
+  if(nchar(row$REF) > 1){
+    return(0)
+  }
+  #excludes low depth calls
+  if(row$DEPTH < minimum_depth){
+    return(0)
+  }
+  #include if alt freq is within range
+  if(row$VAF >= fixation_freq){
+    if(row$VAF <= (1 - fixation_freq)){
+      return(1)
+    }
+  }
+  #include if alt depth is in range
+  # if(row$ALT_COUNT >= min_alt_dp){
+  #   return(1)
+  # }
+  #return 0 if non apply
+  return(0)
+}
+
+
+metrics = data.frame(sample_id = vector(),
+                     n_seg = vector(),
+                     pi = vector(),
+                     pi_tonkin = vector(),
+                     #tajimasd = vector(),
+                     min_50_site_count = vector(),
+                     mean_depth_from_bed = vector(),
+                     vcf_average_depth = vector(),
+                     notes = vector())
+
+for(i in 1:length(vcfnames)){
+  print(samplenames[i])
+  
+  covfile = read.delim(paste0(dir, "/",coveragenames[i]), header = FALSE)
+  
+  #if the vcf file is empty, then there were no snps called in the first place
+  if(file.size(paste0(dir, "/",vcfnames[i])) == 0){
+    metrics[nrow(metrics) + 1, ] = data.frame(sample_id = samplenames[i],
+                                     n_seg = 0,
+                                     pi = 0,
+                                     pi_tonkin = 0,
+                                     #tajimasd = 0,
+                                     min_50_site_count = length(which(covfile$V4 >= minimum_depth)),
+                                     mean_depth_from_bed = mean(covfile$V4),
+                                     vcf_average_depth = 0,
+                                     notes = "no snps called")
+    next
+  }
+  
+  VCF = read.delim(paste0(dir, "/",vcfnames[i]))
+  tab = VCF[which(unlist(lapply(1:nrow(VCF), is_acceptable_snp, VCF, minimum_depth, fixation_freq, min_alt_dp)) == 1), ]
+  
+  if(nrow(tab) == 0){
+    metrics[nrow(metrics) + 1, ] = data.frame(sample_id = samplenames[i],
+                                     n_seg = 0,
+                                     pi = 0,
+                                     pi_tonkin = 0,
+                                     #tajimasd = 0,
+                                     min_50_site_count = length(which(covfile$V4 >= minimum_depth)),
+                                     mean_depth_from_bed = mean(covfile$V4),
+                                     vcf_average_depth = 0,
+                                     notes = "no eligible snps")
+    next
+  }
+  
+  
+  n_seg = dim(tab)[1]
+  tab$pi_count = tab$ALT_COUNT * (tab$DEPTH - tab$ALT_COUNT)
+  tab$choose2 = tab$DEPTH * (tab$DEPTH - 1) * 0.5
+  pi_arnaud = (sum(tab$pi_count) / sum(tab$choose2)) * n_seg
+  freq_i = tab$ALT_COUNT/tab$DEPTH
+  pi_tonkin = 2 * sum((freq_i*(1 - freq_i)))
+  # n = mean(tab$DEPTH)
+  # x = 1:n
+  # a1 = sum(1 / x)
+  # 
+  # a2 = sum((1/x)*(1/x))
+  # 
+  # b1 = (n + 1) / (3 * (n - 1))
+  # 
+  # b2 = (2 * (n**2 + n + 3)) / (9 * n * (n - 1))
+  # 
+  # c1 = b1 - (1 / a1)
+  # 
+  # c2 = b2 - ((n + 2) / (a1 * n)) + (a2 / a1**2)  
+  # 
+  # e1 = c1 / a1
+  # 
+  # e2 = c2 / (a1**2 + a2)
+  
+  # expected_sd = sqrt(e1 * n_seg + e2 * n_seg * (n_seg - 1))
+  # 
+  # wattersons_theta = n_seg / a1
+  # 
+  # if(expected_sd == 0){
+  #   tajimas_d = float("NaN")
+  #   metrics[nrow(metrics) + 1, ] = c(sample_id = samplenames[i],
+  #                                    n_seg = n_seg,
+  #                                    pi = pi,
+  #                                    tajimasd = tajimas_d,
+  #                                    min_50_site_count = length(which(covfile$V4 >= minimum_depth)),
+  #                                    mean_depth_from_bed = mean(covfile$V4),
+  #                                    vcf_average_depth = mean(tab$DEPTH),
+  #                                    notes = "expected sd for tajima's d is 0")
+  # }
+  # if(expected_sd != 0){
+  #   tajimas_d = (pi - wattersons_theta) / expected_sd
+    metrics[nrow(metrics) + 1, ] = data.frame(sample_id = samplenames[i],
+                                     n_seg = n_seg,
+                                     pi = pi_arnaud,
+                                     pi_tonkin = pi_tonkin,
+                                     #tajimasd = tajimas_d,
+                                     min_50_site_count = length(which(covfile$V4 >= minimum_depth)),
+                                     mean_depth_from_bed = mean(covfile$V4),
+                                     vcf_average_depth = mean(tab$DEPTH),
+                                     notes = "all good")
+  #}
+  
+}
+
+write.table(metrics, "/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv",
+            sep = "\t",
+            row.names = FALSE)
+```
+
+
+**Correlation between Arnaud's pi and Tonkin's:**
+```{r, compare the two pis,echo=FALSE}
+ggplot(data = metrics) + geom_point(aes(x=pi, y=pi_tonkin)) +
+  xlab("Arnaud's pi") +
+  ylab("Tonkins Pi") +
+  theme_bw()
+cor.test(metrics$pi, metrics$pi_tonkin)
+```
+
+
+**The new pi values are still not normal:**
+``` {r, histogram of new pi, eecho=FALSE}
+hist(metrics$pi_tonkin)
+```
+
+Tajima's D also has $n$ in its formula. So for a fixed pi and nseg, I calculated Tajima'D for different population sizes. Unlike pi, Tajima's D does not converge to a finite value for large populations: it keeps getting larger:
+
+```{r, calculate tajimas D,echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+library(ggpubr)
+
+
+pi = metrics$pi_tonkin[11]
+n_seg = metrics$n_seg[11]
+
+all = vector()
+for(pop in 2:100000){
+
+n = pop
+x = 1:(n-1)
+a1 = sum(1 / x)
+  
+a2 = sum((1/x)*(1/x))
+  
+b1 = (n + 1) / (3 * (n - 1))
+  
+b2 = (2 * (n**2 + n + 3)) / (9 * n * (n - 1))
+  
+c1 = b1 - (1 / a1)
+  
+c2 = b2 - ((n + 2) / (a1 * n)) + (a2 / a1**2)  
+  
+e1 = c1 / a1
+  
+e2 = c2 / (a1**2 + a2)
+  
+expected_sd = sqrt(e1 * n_seg + e2 * n_seg * (n_seg - 1))
+  
+wattersons_theta = n_seg / a1
+  
+if(expected_sd == 0){
+  tajimas_d = NA
+}
+  
+if(expected_sd != 0){
+  tajimas_d = (pi - wattersons_theta) / expected_sd
+  }
+all = c(all, tajimas_d)
+}
+
+df1 = data.frame(population = 2:100000,
+                TajimasD = all)
+```
+
+```{r, plot tajimasd, echo=FALSE, warning=FALSE}
+
+ggplot(data = df1) + geom_line(aes(x=population, y=TajimasD)) +
+  theme_bw() 
+```
+
+It might look it's converging but zooming in on the plot (for example from 90k-100k) it's still increasing (just VERY slowly):
+
+```{r, plot td, echo=FALSE, warning=FALSE}
+ggplot(data = df1) + geom_line(aes(x=population, y=TajimasD)) +
+  theme_bw() + xlim(c(90000,100000)) + ylim(c(2,2.1))
+```
+
+Because Tajima's D does not converge to a finite value and so is dependent on population size I am not sure if we can properly calculate it for a within-host sample. Originally I was using average depth of coverage as population size, but I don't think if that is a solid assumption (can't the same sample with the same number of viral copies be sequences with different depths?). What worries me is that it goes from negative to positive, so if we increase the population size artificially then we might mask the signal?
+
+

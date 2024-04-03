@@ -1,0 +1,280 @@
+---
+title: "wilcoxon tests for pnps"
+output: html_document
+date: "2024-03-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r, load and prep data, echo=FALSE, results='hide'}
+rm(list = ls())
+library(ggplot2)
+library(ggpubr)
+
+pnps_gw = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/10-correction_pnps/all_pnps_corrected.tsv")
+pnps_gw$Run = pnps_gw$SRA_id
+pnps_gw$pNpS_genomewide = pnps_gw$pNpS
+
+pnps_sgene = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/10-correction_pnps/all_pnps_corrected_sgene.tsv")
+pnps_sgene$Run = pnps_sgene$SRA_id
+
+
+all_pnps = merge(pnps_gw[, c("Run", "pNpS_genomewide")],
+                 pnps_sgene[, c("Run", "pNpS_sgene")],
+                 "Run")
+
+### filter based on sample quality:
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+all_data$Infection = all_data$lab_infected
+
+### merge pnps with the rest of the data
+all_data = merge(all_data, all_pnps, "Run")
+
+swab_only = all_data[which(all_data$tissue_type == "swab"), ]
+
+```
+
+
+Shapiro test of normality for the distribution of pnps genomewide across *all samples*:
+(pvalue < 0.05 means the distribution is significantly different from normal)
+```{r, shapiro test 1, echo=FALSE}
+shapiro.test(all_data$pNpS_genomewide)
+```
+
+
+Shapiro test of normality for the distribution of pnps genomewide on swab samples only:
+```{r, shapiro test 2, echo=FALSE}
+shapiro.test(swab_only$pNpS_genomewide)
+```
+**Histograms of the distribution of genomewide pnps, for all data and swab only samples:**
+```{r, histograms of pnps genomewide, echo=FALSE}
+ggplot(data = all_data) + geom_histogram(aes(x = pNpS_genomewide), color = "blue", fill = NA, binwidth = 0.01) + 
+  theme_bw()+ggtitle("pnps genomewide - all data points")
+
+
+ggplot(data = swab_only) + geom_histogram(aes(x = pNpS_genomewide), color = "blue", fill = NA, binwidth = 0.01) + 
+  theme_bw() + ggtitle("pnps genomewide - swab only samples")
+
+```
+
+
+**Comparison of pnps in lymph vs swab samples, in deer samples:**
+
+Genomewide pnps:
+```{r, deer 1, echo=FALSE}
+###### comparison of pnps genomewide and psgene in lymph and swab, in deer samples
+deer_samples = all_data[which(all_data$Species == "deer"), ]
+
+wilcox.test(deer_samples$pNpS_genomewide[which(deer_samples$tissue_type == "swab")],
+            deer_samples$pNpS_genomewide[which(deer_samples$tissue_type == "lymph")])
+
+print("mean in swab:")
+mean(deer_samples$pNpS_genomewide[which(deer_samples$tissue_type == "swab")])
+print("mean in lymph:")
+mean(deer_samples$pNpS_genomewide[which(deer_samples$tissue_type == "lymph")])
+
+```
+(significant, mean lower in swab)
+
+
+S gene: 
+```{r, deer 2, echo=FALSE}
+## for s gene
+wilcox.test(deer_samples$pNpS_sgene[which(deer_samples$tissue_type == "swab")],
+            deer_samples$pNpS_sgene[which(deer_samples$tissue_type == "lymph")])
+
+
+
+```
+(not significant)
+
+**Comparison of pNpS across species for all samples**
+
+1-1 : Genomewide on all data:
+```{r, pnps comparison all samples, echo=FALSE}
+results = data.frame(species1 = vector(),
+                     species2 = vector(),
+                     gene = vector(),
+                     pvalue = vector(),
+                     sample = vector())
+
+species1 = "human"
+for(species2 in c("cat", "dog", "mink", "deer")){
+  t = wilcox.test(all_data$pNpS_genomewide[which(all_data$Species == species1)],
+                  all_data$pNpS_genomewide[which(all_data$Species == species2)])
+  
+  results = rbind(results, 
+                  data.frame(species1 = species1,
+                             species2 = species2,
+                             gene = "genomewide",
+                             pvalue = t$p.value,
+                             sample = "all data points")
+                  )
+  
+  
+  t = wilcox.test(all_data$pNpS_sgene[which(all_data$Species == species1)],
+                  all_data$pNpS_sgene[which(all_data$Species == species2)])
+  
+   results = rbind(results, 
+                  data.frame(species1 = species1,
+                             species2 = species2,
+                             gene = "S",
+                             pvalue = t$p.value,
+                             sample = "all data points")
+                  )
+  
+}
+
+
+print(results[which(results$gene == "genomewide"), ])
+
+```
+
+1-2: S gene on all data:
+```{r, w2, echo=FALSE}
+print(results[which(results$gene == "S"), ])
+```
+
+
+2-1: Genomewide on swab samples only:
+```{r, wilcoxon on swab only samples, echo=FALSE}
+results = data.frame(species1 = vector(),
+                     species2 = vector(),
+                     gene = vector(),
+                     pvalue = vector(),
+                     sample = vector())
+
+species1 = "human"
+for(species2 in c("cat", "dog", "mink", "deer")){
+  t = wilcox.test(swab_only$pNpS_genomewide[which(swab_only$Species == species1)],
+                  swab_only$pNpS_genomewide[which(swab_only$Species == species2)])
+  
+  results = rbind(results, 
+                  data.frame(species1 = species1,
+                             species2 = species2,
+                             gene = "genomewide",
+                             pvalue = t$p.value,
+                             sample = "swab only points")
+                  )
+  
+  
+  t = wilcox.test(swab_only$pNpS_sgene[which(swab_only$Species == species1)],
+                  swab_only$pNpS_sgene[which(swab_only$Species == species2)])
+  
+   results = rbind(results, 
+                  data.frame(species1 = species1,
+                             species2 = species2,
+                             gene = "S",
+                             pvalue = t$p.value,
+                             sample = "swab only points")
+                  )
+  
+}
+
+
+print(results[which(results$gene == "genomewide"), ])
+
+
+```
+
+2-2: S gene on swab only samples:
+```{r, w3, echo=FALSE}
+print(results[which(results$gene == "S"), ])
+
+```
+
+
+when running the tests on swab only samples, deer changes slightly (the p value gets smaller) but not enough to be significant.
+
+
+
+**The median and mean values for pnps in all samples:**
+```{r, median values, echo=FALSE}
+
+medians = data.frame(species = vector(),
+                     gene = vector(),
+                     median = vector(),
+                     mean = vector(),
+                     sample = vector())
+
+for(species in c("cat", "dog", "mink", "deer", "human")){
+  medians = rbind(medians,
+                  data.frame(species = species,
+                             gene = "genomewide",
+                             median = median(all_data$pNpS_genomewide[which(all_data$Species == species)]),
+                             mean = mean(all_data$pNpS_genomewide[which(all_data$Species == species)]),
+                             sample = "all data points")
+                  )
+}
+
+for(species in c("cat", "dog", "mink", "deer", "human")){
+  medians = rbind(medians,
+                  data.frame(species = species,
+                             gene = "S",
+                             median = median(all_data$pNpS_sgene[which(all_data$Species == species)]),
+                             mean = mean(all_data$pNpS_sgene[which(all_data$Species == species)]),
+                             sample = "all data points")
+                  )
+}
+
+print(medians)
+
+```
+
+**The median and mean values for pnps in swab samples:**
+```{r, means and medians in deer,echo=FALSE}
+medians = data.frame(species = vector(),
+                     gene = vector(),
+                     median = vector(),
+                     mean = vector(),
+                     sample = vector())
+
+for(species in c("cat", "dog", "mink", "deer", "human")){
+  medians = rbind(medians,
+                  data.frame(species = species,
+                             gene = "genomewide",
+                             median = median(swab_only$pNpS_genomewide[which(swab_only$Species == species)]),
+                             mean = mean(swab_only$pNpS_genomewide[which(swab_only$Species == species)]),
+                             sample = "swab only")
+                  )
+}
+
+for(species in c("cat", "dog", "mink", "deer", "human")){
+  medians = rbind(medians,
+                  data.frame(species = species,
+                             gene = "S",
+                             median = median(swab_only$pNpS_sgene[which(swab_only$Species == species)]),
+                             mean = mean(swab_only$pNpS_sgene[which(swab_only$Species == species)]),
+                             sample = "swab only")
+                  )
+}
+
+print(medians)
+
+
+```
+
+
