@@ -1,0 +1,1017 @@
+---
+title: "Virus evolution review final edits"
+output: html_document
+date: "2024-07-04"
+---
+
+MODEL 1: Main model for nseg, the Poisson GLMM on swab only samples:
+```{r, main text glmm model}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+library(knitr)
+library(ggplot2)
+
+
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+
+predictors = c("Species", "lab_infected", "tissue_type", "dpth", "brdth", "assay_type")
+
+
+
+
+######### Poisson GLMM on swab only for isnvs
+nseg_glmm = glmer(n_seg ~ Species + lab_infected + dpth + brdth + assay_type+
+                    (1 | BioProject),
+                  data = all_data[which(all_data$tissue_type == "swab"), ], family = "poisson",
+                  control=glmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+vif(nseg_glmm)
+
+
+nseg_glmm_coefficients = as.data.frame(summary(nseg_glmm)$coefficients)
+nseg_glmm_coefficients$rateratio = exp(nseg_glmm_coefficients[,1])
+
+write.table(nseg_glmm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/model1_GLMM_nseg_swabs.tsv",
+            sep = "\t")
+write.table(vif(nseg_glmm),
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/GLMM_nseg_swabs_gvif.tsv",
+            sep = "\t")
+
+```
+
+
+MODEL S1: supp full model for nseg, the Poisson GLMM on all samples:
+```{r, main text glmm model}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+library(knitr)
+library(ggplot2)
+
+
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+
+predictors = c("Species", "lab_infected", "tissue_type", "dpth", "brdth", "assay_type")
+
+
+
+
+######### Poisson GLMM on swab only for isnvs
+nseg_glmm = glmer(n_seg ~ Species + lab_infected + dpth + brdth + assay_type+tissue_type+
+                    (1 | BioProject),
+                  data = all_data, family = "poisson",
+                  control=glmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+summary(nseg_glmm)
+vif(nseg_glmm)
+coefficients = as.data.frame(summary(nseg_glmm)$coefficients)
+coefficients$rateratio = exp(coefficients$Estimate)
+write.table(coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS1_GLMM_nseg_fullmodel.tsv",
+            sep = "\t")
+
+write.table(vif(nseg_glmm),
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS1_GLMM_nseg_fullmodel_vif.tsv",
+            sep = "\t")
+
+
+```
+
+
+MODEL S2: Poisson GLMM for deer only, with tissue as a fixed effect for isnvs
+```{r, main text glmm model}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+library(knitr)
+library(ggplot2)
+
+
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+
+predictors = c("Species", "lab_infected", "tissue_type", "dpth", "brdth", "assay_type")
+
+
+
+deer_data = all_data[which(all_data$Species == "deer"), ]
+
+######### Poisson GLMM on swab only for isnvs
+deer_nseg_glmm = glmer(n_seg ~ tissue_type + dpth + brdth +
+                    (1 | BioProject),
+                  data = deer_data, family = "poisson",
+                  control=glmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+vif(deer_nseg_glmm)
+
+deer_nseg_glm = glm(n_seg ~ tissue_type + dpth + brdth,
+                  data = deer_data, family = "poisson")
+summary(deer_nseg_glm)
+summary(deer_nseg_glmm)
+
+deer_nseg_glm_coefficients = as.data.frame(summary(deer_nseg_glm)$coefficients)
+deer_nseg_glm_coefficients$rateratio = exp(deer_nseg_glm_coefficients$Estimate)
+
+deer_nseg_glmm_coefficients = as.data.frame(summary(deer_nseg_glmm)$coefficients)
+deer_nseg_glmm_coefficients$rateratio = exp(deer_nseg_glmm_coefficients$Estimate)
+
+write.table(deer_nseg_glmm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS2_GLMM_nseg_deeronly.tsv",
+            sep = "\t")
+
+write.table(deer_nseg_glm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS22_GLM_nseg_deeronly.tsv",
+            sep = "\t")
+
+```
+
+
+
+MODEL 2 and S3: LMM for pi:
+```{r}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+library(knitr)
+library(lmerTest)
+
+
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+all_data$Infection = all_data$lab_infected
+
+### load tonkins pi data
+tpi = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+
+tpi = tpi[, c("sample_id", "pi_tonkin")]
+all_data = merge(all_data, tpi, "sample_id")
+deer_data = all_data[which(all_data$Species == "deer"), ]
+
+pi_lmm = lmer(pi_tonkin ~ Species + lab_infected + dpth + brdth + assay_type + (1|BioProject),
+           data = all_data[which(all_data$tissue_type =="swab"), ],
+           control=lmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+
+vif(pi_lmm)
+pi_lmm_coefficients = as.data.frame(summary(pi_lmm)$coefficients)
+write.table(pi_lmm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/model2_LMM_pi.tsv",
+            sep = "\t")
+
+
+deer_pi_lmm = lmer(pi_tonkin ~ tissue_type +dpth + brdth + (1|BioProject),
+           data = deer_data,
+           control=lmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+
+deer_pi_lmm_coefficients = as.data.frame(summary(deer_pi_lmm)$coefficients)
+vif(deer_pi_lmm)
+write.table(deer_pi_lmm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS3_LMM_pi_deer.tsv",
+            sep = "\t")
+
+deer_pi_lm = lm(pi_tonkin ~ tissue_type +dpth + brdth,
+           data = deer_data,
+           control=lmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+summary(deer_pi_lm)
+
+```
+
+
+
+Figure 1 and 2: isnv and pi for swab + deer
+```{r}
+rm(list = ls())
+library(ggplot2)
+library(ggpubr)
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+all_data$Infection = all_data$lab_infected
+
+#### changes to swab labels for plotting purposes
+all_data$tissue_type = "nasopharyngeal"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "nasopharyngeal")
+
+
+### load tonkins pi data
+tpi = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+typeof(tpi$pi_tonkin)
+tpi = tpi[, c("sample_id", "pi_tonkin")]
+all_data = merge(all_data, tpi, "sample_id")
+
+s=25
+d=3
+
+### only keep swab only samples
+swab_data = all_data[which(all_data$tissue_type == "nasopharyngeal"), ]
+
+
+#### create plots
+n_seg_plot = ggplot(swab_data, aes(x=factor(Species, level = c("human", "cat", "dog", "mink", "deer")), 
+                                  y=n_seg)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(19, 5)) +
+  ylim(0,50) +
+  theme_bw() + xlab("Species") + ggtitle("a.") +
+  ylab(str_wrap("Number of iSNVs")) + theme(legend.position = "none",
+                                              text = element_text(size=s),
+                                              plot.title = element_text(size = s, face = "bold"))
+
+pi_plot = ggplot(swab_data, aes(x=factor(Species, level = c("human", "cat", "dog", "mink", "deer")), 
+                               y=pi_tonkin)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(19, 5)) +
+  ylim(0,20) +
+  theme_bw() + xlab("Species") + ggtitle("b.") +
+  ylab(str_wrap("Average number of pairwise differences", width = 30)) + theme(legend.position = "none",
+                                                         text = element_text(size=s),
+                                                         plot.title = element_text(size = s, face = "bold"))
+
+
+
+### only keep swab only samples
+deer_data = all_data[which(all_data$Species == "deer"), ]
+
+#### create plots
+deer_n_seg_plot = ggplot(deer_data, aes(x=factor(tissue_type, level = c("nasopharyngeal", "lymph")), 
+                                  y=n_seg)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(5,19)) +
+  ylim(0,50) +
+  theme_bw() + xlab("Species") + ggtitle("a.") +
+  ylab("Number of iSNVs") + theme(legend.position = "none",
+                                              text = element_text(size=s),
+                                              plot.title = element_text(size = s, face = "bold"))
+
+
+deer_pi_plot = ggplot(deer_data, aes(x=factor(tissue_type, level = c("nasopharyngeal", "lymph")), 
+                               y=pi_tonkin)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(5,19)) +
+  ylim(0,20) +
+  theme_bw() + xlab("Species") + ggtitle("b.") +
+  ylab(str_wrap("Average number of pairwise differences", width = 30)) + theme(legend.position = "none",
+                                                         text = element_text(size=s),
+                                                         plot.title = element_text(size = s, face = "bold"))
+
+figure1 = ggarrange(n_seg_plot ,pi_plot,
+                    nrow =1, ncol = 2, widths = c(6,6),
+                    heights = c(10,10)) 
+
+figure2 = ggarrange(deer_n_seg_plot ,deer_pi_plot,
+                    nrow =1, ncol = 2, widths = c(6,6),
+                    heights = c(10,10)) 
+
+
+ggsave(figure1,
+       file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/figure1.pdf",
+       device = "pdf",
+       height = 10,
+       width = 15)
+
+ggsave(figure2,
+       file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/figure2.pdf",
+       device = "pdf",
+       height = 10,
+       width = 15)
+
+```
+
+
+
+Figure 3 and 4: richness and shannon for swab + deer
+```{r}
+rm(list = ls())
+library(ggplot2)
+library(ggpubr)
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+all_data$Infection = all_data$lab_infected
+
+#### changes to swab labels for plotting purposes
+all_data$tissue_type = "nasopharyngeal"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "nasopharyngeal")
+
+
+### load tonkins pi data
+tpi = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+typeof(tpi$pi_tonkin)
+tpi = tpi[, c("sample_id", "pi_tonkin")]
+all_data = merge(all_data, tpi, "sample_id")
+
+s=25
+d=3
+
+### only keep swab only samples
+swab_data = all_data[which(all_data$tissue_type == "nasopharyngeal"), ]
+
+
+#### create plots
+richness_plot = ggplot(swab_data, aes(x=factor(Species, level = c("human", "cat", "dog", "mink", "deer")), 
+                                  y=filtered_richness)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(19, 5)) +
+  ylim(0,25) +
+  theme_bw() + xlab("Species") + ggtitle("a.") +
+  ylab(str_wrap("Number of lineages present")) + theme(legend.position = "none",
+                                              text = element_text(size=s),
+                                              plot.title = element_text(size = s, face = "bold"))
+
+shannon_plot = ggplot(swab_data, aes(x=factor(Species, level = c("human", "cat", "dog", "mink", "deer")), 
+                               y=filtered_shannon)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(19, 5)) +
+  ylim(0,5) +
+  theme_bw() + xlab("Species") + ggtitle("b.") +
+  ylab(str_wrap("Shannon diversity", width = 30)) + theme(legend.position = "none",
+                                                         text = element_text(size=s),
+                                                         plot.title = element_text(size = s, face = "bold"))
+
+
+
+### only keep swab only samples
+deer_data = all_data[which(all_data$Species == "deer"), ]
+
+#### create plots
+deer_richness_plot = ggplot(deer_data, aes(x=factor(tissue_type, level = c("nasopharyngeal", "lymph")), 
+                                  y=filtered_richness)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(5,19)) +
+  ylim(0,25) +
+  theme_bw() + xlab("Species") + ggtitle("a.") +
+  ylab("Number of lineages present") + theme(legend.position = "none",
+                                              text = element_text(size=s),
+                                              plot.title = element_text(size = s, face = "bold"))
+
+
+deer_shannon_plot = ggplot(deer_data, aes(x=factor(tissue_type, level = c("nasopharyngeal", "lymph")), 
+                               y=filtered_shannon)) + 
+  geom_boxplot(fill = "#4A5899", alpha = 0.1, outlier.shape = NA) +
+  geom_jitter(aes(color = Infection,
+                  shape = tissue_type),
+              width = 0.25, height=0, size = d, stroke = 1) + 
+  scale_color_manual(values = c("#4A5899", "#CD5D67")) + 
+  scale_shape_manual(values = c(5,19)) +
+  ylim(0,5) +
+  theme_bw() + xlab("Species") + ggtitle("b.") +
+  ylab(str_wrap("Shannon diversity", width = 30)) + theme(legend.position = "none",
+                                                         text = element_text(size=s),
+                                                         plot.title = element_text(size = s, face = "bold"))
+
+figure3 = ggarrange(richness_plot ,shannon_plot,
+                    nrow =1, ncol = 2, widths = c(6,6),
+                    heights = c(10,10)) 
+
+figure4 = ggarrange(deer_richness_plot ,deer_shannon_plot,
+                    nrow =1, ncol = 2, widths = c(6,6),
+                    heights = c(10,10)) 
+
+
+ggsave(figure3,
+       file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/figure3.pdf",
+       device = "pdf",
+       height = 10,
+       width = 15)
+
+ggsave(figure4,
+       file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/figure4.pdf",
+       device = "pdf",
+       height = 10,
+       width = 15)
+
+```
+
+
+
+Wilcoxon for swab only and for deer:
+```{r}
+
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+
+
+
+
+## load previous metric dataset
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+## load tonkins pi data
+metrics_w_tonkin = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+pi_tonkin = metrics_w_tonkin[, c("sample_id", "pi_tonkin")]
+
+## merge tonkins pi into all_data
+all_data = merge(all_data, pi_tonkin, "sample_id")
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+
+deer_data = all_data[which(all_data$Species == "deer"), ]
+all_data = all_data[which(all_data$tissue_type == "swab"), ]
+
+wilcoxon_df = data.frame(species = vector(),
+                         nseg_pvalue = vector(),
+                         pi_pvalue = vector(),
+                         shannon_pvalue = vector(),
+                         richness_pvalue = vector(),
+                         tajimasd_pvalue = vector())
+
+
+for(species in c("cat", "dog", "mink", "deer")){
+  #nseg test
+  w_nseg = wilcox.test(all_data$n_seg[which(all_data$Species == "human")],
+                       all_data$n_seg[which(all_data$Species == species)])
+  #pi test
+  w_pi = wilcox.test(all_data$pi_tonkin[which(all_data$Species == "human")],
+                     all_data$pi_tonkin[which(all_data$Species == species)])
+  #shannon test
+  w_shannon = wilcox.test(all_data$filtered_shannon[which(all_data$Species == "human")],
+                          all_data$filtered_shannon[which(all_data$Species == species)])
+  #richness test
+  w_richness = wilcox.test(all_data$filtered_richness[which(all_data$Species == "human")],
+                           all_data$filtered_richness[which(all_data$Species == species)])
+  
+  w_tajimasd = wilcox.test(all_data$tajimasd[which(all_data$Species == "human")],
+                           all_data$tajimasd[which(all_data$Species == species)])
+  
+  wilcoxon_df[nrow(wilcoxon_df) + 1, ] = c(paste0(species, " vs human"),
+                                           w_nseg$p.value,
+                                           w_pi$p.value,
+                                           w_shannon$p.value,
+                                           w_richness$p.value,
+                                           w_tajimasd$p.value)
+  
+}
+
+
+mean_table = data.frame(species = vector(),
+                         nseg = vector(),
+                         pi = vector(),
+                         filtered_shannon = vector(),
+                         filtered_richness = vector()
+                         )
+
+
+median_table = data.frame(species = vector(),
+                        nseg = vector(),
+                        pi = vector(),
+                        filtered_shannon = vector(),
+                        filtered_richness = vector()
+)
+
+for(species in c("cat", "dog", "mink", "deer", "human")){
+  mean_table = rbind(mean_table,
+                     data.frame(species = species,
+                                nseg = mean(all_data$n_seg[which(all_data$Species == species)]),
+                                pi = mean(all_data$pi[which(all_data$Species == species)]),
+                                filtered_shannon = mean(all_data$filtered_shannon[which(all_data$Species == species)]),
+                                filtered_richness = mean(all_data$filtered_richness[which(all_data$Species == species)]),
+                                tajimasd = mean(all_data$tajimasd[which(all_data$Species == species)])
+                     )
+                     )
+  
+  
+  median_table = rbind(median_table,
+                     data.frame(species = species,
+                                nseg = median(all_data$n_seg[which(all_data$Species == species)]),
+                                pi = median(all_data$pi[which(all_data$Species == species)]),
+                                filtered_shannon = median(all_data$filtered_shannon[which(all_data$Species == species)]),
+                                filtered_richness = median(all_data$filtered_richness[which(all_data$Species == species)]),
+                                tajimasd = median(all_data$tajimasd[which(all_data$Species == species)])
+                     )
+  )
+  
+}
+
+
+write.table(median_table, 
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/median_table_swabonly.tsv",
+            row.names = FALSE,
+            sep = "\t")
+
+write.table(mean_table, 
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/mean_table_swabonly.tsv",
+            row.names = FALSE,
+            sep = "\t")
+
+write.table(wilcoxon_df, 
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/wilcoxon_table_swabonly.tsv",
+            row.names = FALSE,
+            sep = "\t")
+
+
+```
+
+
+for richness: (model 3)
+```{r, glmm main text for richness}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+
+
+
+
+## load previous metric dataset
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+## load tonkins pi data
+metrics_w_tonkin = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+pi_tonkin = metrics_w_tonkin[, c("sample_id", "pi_tonkin")]
+
+## merge tonkins pi into all_data
+all_data = merge(all_data, pi_tonkin, "sample_id")
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+
+deer_data = all_data[which(all_data$Species == "deer"), ]
+all_data = all_data[which(all_data$tissue_type == "swab"), ]
+
+
+richness_glmm = glmer(filtered_richness ~ Species + lab_infected + dpth + brdth +
+                    (1 | BioProject),
+                  data = all_data[which(all_data$tissue_type == "swab"), ], family = "poisson",
+                  control=glmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+richness_glmm_summary = summary(richness_glmm)
+richness_glmm_summary_coefficients = as.data.frame(richness_glmm_summary$coefficients)
+richness_glmm_summary_coefficients$rateratio = exp(richness_glmm_summary_coefficients$Estimate)
+
+vif(richness_glmm)
+write.table(richness_glmm_summary_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/model3_GLMM_richness_swabs_noassay.tsv",
+            sep = "\t")
+
+write.table(vif(richness_glmm),
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/model3_GLMM_richness_swabs_noassay_vif.tsv",
+            sep = "\t")
+#### VIF values for before assay type was removed
+richness_glmm2 = glmer(filtered_richness ~ Species + lab_infected + dpth + brdth + assay_type+
+                    (1 | BioProject),
+                  data = all_data[which(all_data$tissue_type == "swab"), ], family = "poisson",
+                  control=glmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+
+vif(richness_glmm2)
+
+### is singular
+# deer_richness_glmm = glmer(filtered_richness ~  tissue_type +brdth +
+#                     (1 | BioProject),
+#                   data = deer_data, family = "poisson",
+#                   control=glmerControl(optimizer="bobyqa",
+#                                        optCtrl=list(maxfun=2e5)))
+
+deer_richness_glm = glm(filtered_richness ~  tissue_type +dpth + brdth,
+                  data = deer_data, family = poisson(link = "log"))
+deer_richness_glm_coefficients = as.data.frame(summary(deer_richness_glm)$coefficients)
+deer_richness_glm_coefficients$rateratio = exp(deer_richness_glm_coefficients$Estimate)
+write.table(deer_richness_glm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS4_GLM_richness_deer_swabs_noassay.tsv",
+            sep = "\t")
+vif(deer_richness_glm)
+
+```
+
+
+LMM for Shannon:
+```{r}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+library(knitr)
+library(lmerTest)
+
+
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+all_data$Infection = all_data$lab_infected
+
+### load tonkins pi data
+tpi = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+
+tpi = tpi[, c("sample_id", "pi_tonkin")]
+all_data = merge(all_data, tpi, "sample_id")
+deer_data = all_data[which(all_data$Species == "deer"), ]
+
+shannon_lmm = lmer(filtered_shannon ~ Species + lab_infected + dpth + brdth + assay_type + (1|BioProject),
+           data = all_data[which(all_data$tissue_type =="swab"), ],
+           control=lmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+
+
+vif(shannon_lmm)
+shannon_lmm_coefficients = as.data.frame(summary(shannon_lmm)$coefficients)
+write.table(shannon_lmm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/model4_LMM_shannon_swabs.tsv",
+            sep = "\t")
+
+
+deer_shannon_lmm = lmer(filtered_shannon ~ tissue_type +dpth +(1|BioProject),
+           data = deer_data,
+           control=lmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+
+vif(deer_shannon_lmm)
+deer_lmm_coefficients = as.data.frame(summary(deer_shannon_lmm)$coefficients)
+write.table(deer_lmm_coefficients,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS5_LMM_shannon_deer_swabs.tsv",
+            sep = "\t")
+
+
+deer_shannon_lm = lm(filtered_shannon ~ tissue_type +dpth + brdth + BioProject,
+           data = deer_data,
+           control=lmerControl(optimizer="bobyqa",
+                                       optCtrl=list(maxfun=2e5)))
+
+deer_lm_coefficients = as.data.frame(summary(deer_shannon_lm)$coefficients)
+
+
+```
+
+
+
+Model S6: iSNVs with lineage:
+```{r}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+library(knitr)
+library(lmerTest)
+library(stringr)
+
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+all_data$Infection = all_data$lab_infected
+
+### load tonkins pi data
+tpi = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+tpi = tpi[, c("sample_id", "pi_tonkin")]
+all_data = merge(all_data, tpi, "sample_id")
+
+### load and create representative lineage information
+lineages = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/freyja_lineage_details_strictcutoff_filtered.tsv")
+lineages$representative_lineage = "tbd"
+
+for(i in 1:nrow(lineages)){
+  lineages$representative_lineage[i] = unlist(str_split(lineages$lineages_called[i], "/"))[1]
+}
+
+lineages$binned_lineage = "tbd"
+lineages$binned_lineage[which(lineages$representative_lineage == "B.1.617.2")] = "B.1.617.2"
+lineages$binned_lineage[(lineages$binned_lineage == "tbd") & (str_detect(lineages$representative_lineage, "B.1.1\\."))] = "B.1.1.x"
+
+lineages$binned_lineage[(lineages$binned_lineage == "tbd") & (str_detect(lineages$representative_lineage, "B.1\\."))] = "B.1.x"
+
+
+# lineages$binned_lineage[(lineages$binned_lineage == "tbd") & (str_detect(lineages$representative_lineage, "AY\\."))] = "AY.x"
+
+lineages$binned_lineage[(lineages$binned_lineage == "tbd")] = lineages$representative_lineage[(lineages$binned_lineage == "tbd")]
+
+
+lineages = lineages[, c("Run", "representative_lineage", "binned_lineage")]
+
+
+all_data = merge(all_data, lineages)
+
+nseg_glmm = glmer(n_seg ~  Species + lab_infected + dpth + brdth + assay_type +
+                  (1 | BioProject) + (1 | binned_lineage),
+                data = all_data[which(all_data$tissue_type == "swab"),], family = "poisson",
+                control=glmerControl(optimizer="bobyqa",
+                                     optCtrl=list(maxfun=2e5)))
+nseg_glmm_coeff = as.data.frame(summary(nseg_glmm)$coefficients)
+nseg_glmm_coeff$rateratio = exp(nseg_glmm_coeff$Estimate)
+
+vif(nseg_glmm)
+write.table(nseg_glmm_coeff,
+            file = "/users/sana/Documents/AIM3/021-full_pipeline/xx-VirusEvo_review/modelS6_GLMM_nseg_swab_lineageeffect.tsv",
+            sep = "\t")
+
+
+```
+
+
+looking at the histogram of breadth in deer:
+```{r, }
+all_data=all_data[which(all_data$tissue_type == "swab"), ]
+hist(all_data$brdth[which(all_data$Species == "deer")])
+hist(all_data$brdth)
+
+nrow((all_data[all_data$Species == "deer" & all_data$brdth < 0.9, ]))
+nrow((all_data[all_data$Species == "mink" & all_data$brdth < 0.9, ]))
+nrow((all_data[all_data$Species == "cat" & all_data$brdth < 0.9, ]))
+nrow((all_data[all_data$Species == "dog" & all_data$brdth < 0.9, ]))
+```
+
+
+Deer medians:
+```{r}
+rm(list = ls())
+library(car)
+library(MASS)
+library(lme4)
+library(knitr)
+library(lmerTest)
+
+
+all_data = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_strict_thresholds_min50_5percent.tsv")
+
+
+#remove sites that have lower than 50 mean depth
+all_data = all_data[-which(all_data$mean_depth_from_bed < 50), ]
+all_data = all_data[-which(all_data$min_50_site_count < 15000), ]
+
+
+all_data$Species = relevel(as.factor(all_data$Species), ref = "human")
+
+all_data$tissue_type = "swab"
+all_data$tissue_type[which(all_data$tissue == "lymph-tissue")] = "lymph"
+all_data$tissue_type = relevel(as.factor(all_data$tissue_type), ref = "swab")
+
+all_data$lab_infected = relevel(as.factor(all_data$lab_infected), ref = "natural")
+
+all_data$tissue = relevel(as.factor(all_data$tissue), ref = "nasal/pharyngeal-swab")
+all_data$assay_type = relevel(as.factor(all_data$assay_type), ref = "AMPLICON")
+all_data$BioProject = as.factor(all_data$BioProject)
+all_data$shannon = as.numeric(all_data$filtered_shannon)
+all_data$dpth = as.vector(scale(all_data$mean_depth_from_bed))
+all_data$brdth = all_data$min_50_site_count/29903
+all_data$filtered_richness = as.numeric(all_data$filtered_richness)
+all_data$filtered_shannon = as.numeric(all_data$filtered_shannon)
+
+all_data$Infection = all_data$lab_infected
+
+### load tonkins pi data
+tpi = read.delim("/users/sana/Documents/AIM3/021-full_pipeline/1-metrics/metrics_w_tonkins_pi.tsv")
+
+tpi = tpi[, c("sample_id", "pi_tonkin")]
+all_data = merge(all_data, tpi, "sample_id")
+deer_data = all_data[which(all_data$Species == "deer"), ]
+
+
+
+#### median isnvs
+median(deer_data$n_seg[deer_data$tissue_type == "swab"])
+median(deer_data$n_seg[deer_data$tissue_type == "lymph"])
+
+#### median richness
+median(deer_data$filtered_richness[deer_data$tissue_type == "swab"])
+median(deer_data$filtered_richness[deer_data$tissue_type == "lymph"])
+
+#### median shannon
+median(deer_data$filtered_shannon[deer_data$tissue_type == "swab"])
+median(deer_data$filtered_shannon[deer_data$tissue_type == "lymph"])
+
+```
+
+
